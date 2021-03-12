@@ -46,7 +46,7 @@ We continue developing support for new annotation formats.
 The project supports Python 3.8. We do not take any responsibility for any other version compatibility.
 
 ```bash
-git clone https://gitlab.rubetek.com/ai/rubetek_dataset_tools
+git clone https://github.com/rubetek/rubetools.git
 pip -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -162,5 +162,5 @@ Please use this bibtex if you want to cite this repository in your publications:
 		year = {2021},
 		publisher = {GitHub},
 		journal = {GitHub repository},
-		howpublished = {}},
+		howpublished = {\url{https://github.com/rubetek/rubetools.git}},
 		}
