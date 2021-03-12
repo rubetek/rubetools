@@ -29,12 +29,12 @@ We continue developing support for new annotation formats.
 ## Table 
 
 - [Overview](#overview)
-	+ [Format Zoo](#format Zoo)
-- [Getting started](#getting started)
+	+ [Format Zoo](#currently-supported-formats)
+- [Getting started](#getting-started)
  	+ [Prerequisites](#prerequisites)
- 	+ [Quick start](#quick start)
- 	+ [Load data](#load data)
-	+ [Annotation tools](#annotation tools)
+ 	+ [Quick start](#quick-start)
+ 	+ [Load data](#load-data)
+	+ [Annotation tools](#annotation-tools)
  	+ [EDA](#eda)
 - [Citation](#citation)
 
