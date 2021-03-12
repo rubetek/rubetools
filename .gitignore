@@ -1,0 +1,16 @@
+__pycache__/
+.idea
+.vscode/
+.ipynb_checkpoints/
+
+.venv
+dist
+output
+tests/data
+
+utils/converters
+utils/other
+rubetools.egg-info
+
+main.py
+
