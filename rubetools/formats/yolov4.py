@@ -5,7 +5,6 @@ from typing import List
 from .base import FormatBase
 from ..shapes.hbox import HBox
 from ..shapes.polygon import Polygon
-from ..utils import colorstr
 
 
 class Yolov4(FormatBase):
@@ -36,11 +35,11 @@ class Yolov4(FormatBase):
         if save_dir:
             os.makedirs(save_dir, exist_ok=True)
         else:
-            if self.annotation_directory is None:
+            if self.annotation_path is None:
                 raise ValueError('Save directory is None.')
 
         obj_names_path = os.path.join(save_dir, 'obj.names')
-        class_names = list(self._labels_stat.keys())
+        class_names = self.labels
         with open(obj_names_path, mode="w", encoding='utf-8') as f:
             for class_name in class_names:
                 f.write(class_name + '\n')
@@ -53,23 +52,24 @@ class Yolov4(FormatBase):
                 w_image = ann.width
                 h_image = ann.height
 
-                for obj in ann.objects:
-                    if isinstance(obj, HBox):
-                        hbox = obj
-                    elif isinstance(obj, Polygon):
-                        hbox = HBox.from_polygon(obj)
-                    else:
-                        raise NotImplemented
+                for obj_shape in ann.objects:
+                    for _, obj in obj_shape:
+                        if isinstance(obj, HBox):
+                            hbox = obj
+                        elif isinstance(obj, Polygon):
+                            hbox = HBox.from_polygon(obj)
+                        else:
+                            continue
 
-                    label = class_names.index(hbox.label)
+                        label = class_names.index(hbox.label)
 
-                    x_c = float((hbox.box[0] + hbox.box[2])/2) / w_image
-                    y_c = float((hbox.box[1] + hbox.box[3])/2) / h_image
-                    w_b = float((hbox.box[2] - hbox.box[0]) / w_image)
-                    h_b = float((hbox.box[3] - hbox.box[1]) / h_image)
+                        x_c = float((hbox.box[0] + hbox.box[2])/2) / w_image
+                        y_c = float((hbox.box[1] + hbox.box[3])/2) / h_image
+                        w_b = float((hbox.box[2] - hbox.box[0]) / w_image)
+                        h_b = float((hbox.box[3] - hbox.box[1]) / h_image)
 
-                    box = '%d %f %f %f %f\r' % (label, x_c, y_c, w_b, h_b)
-                    f.writelines(box)
+                        box = '%d %f %f %f %f\r' % (label, x_c, y_c, w_b, h_b)
+                        f.writelines(box)
 
             new_path = os.path.join(obj_dir, os.path.basename(ann.img_path))
             shutil.copy(ann.img_path, new_path)
@@ -88,4 +88,4 @@ class Yolov4(FormatBase):
             f.write('names = obj.names\n')
             f.write('backup = backup\n')
 
-        self.log.info("Saved in {}.".format(str(colorstr(self.__class__.__name__))))
+        self.log.info("Saved in {}.".format(str(self.__class__.__name__)))

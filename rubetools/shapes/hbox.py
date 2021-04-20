@@ -1,13 +1,14 @@
 import logging
+from .shape import Shape
 
 logger = logging.getLogger(__name__)
 
 
-class HBox:
+class HBox(Shape):
     """
     Horizontal box (hbox) shape of annotation object
     """
-    def __init__(self, label: str, x_min: float, y_min: float, x_max: float, y_max: float):
+    def __init__(self, label: str, x_min: float, y_min: float, x_max: float, y_max: float, conf: float = 1.0):
         """
         Constructor
         :param label: object's class name
@@ -16,26 +17,19 @@ class HBox:
         :param x_max: bottom right x coordinate
         :param y_max: bottom right y coordinate
         """
-        self._label = label
+        super(HBox, self).__init__(label=label, confidence=conf)
         self._box = [x_min, y_min, x_max, y_max]
 
     def __repr__(self):
         return '<{}, class: {}>'.format(self.__class__.__name__, self.label)
 
     @property
-    def label(self):
-        return self._label
-
-    @label.setter
-    def label(self, value):
-        if isinstance(value, str):
-            self._label = value
-        else:
-            raise ValueError('Expected str value.')
-
-    @property
     def box(self):
         return self._box
+
+    @property
+    def pixel_area(self):
+        return round((self._box[2] - self._box[0] + 1) * (self._box[3] - self._box[1] + 1), 2)
 
     @classmethod
     def from_polygon(cls, polygon):
@@ -50,7 +44,9 @@ class HBox:
         x_min, x_max = min(x), max(x)
         y_min, y_max = min(y), max(y)
 
-        return cls(label=label, x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
+        conf = polygon.confidence
+
+        return cls(label=label, x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, conf=conf)
 
     def __eq__(self, other):
         if not isinstance(other, HBox):

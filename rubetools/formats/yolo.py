@@ -1,4 +1,5 @@
 import os
+from glob import glob
 import shutil
 from tqdm import tqdm
 import datetime
@@ -7,7 +8,7 @@ from .base import FormatBase
 from ..shapes.hbox import HBox
 from ..shapes.polygon import Polygon
 from ..annotation import Annotation
-from ..utils import Image, colorstr
+from ..utils import Image
 
 
 class Yolo(FormatBase):
@@ -16,6 +17,9 @@ class Yolo(FormatBase):
     """
     def __init__(self, ann_path: str = None, img_path: str = None, selected_labels: List[str] = None,
                  is_load_empty_ann: bool = True, file_cls_name: str = 'classes.txt'):
+        if file_cls_name is None or not isinstance(file_cls_name, str):
+            raise FileNotFoundError('Incorrect initialization class path.')
+
         self._file_cls_name = file_cls_name
         super().__init__(ann_path=ann_path, img_path=img_path, selected_labels=selected_labels,
                          is_load_empty_ann=is_load_empty_ann)
@@ -27,32 +31,34 @@ class Yolo(FormatBase):
         :param is_load_empty_ann: if True - load annotations with empty objects images, otherwise - skip.
         :return:
         """
-        # common checks implemented in the base method
-        super()._load(labels=labels, is_load_empty_ann=is_load_empty_ann)
-
-        if not (os.path.isdir(self._img_dir) and os.path.isdir(self._ann_dir)):
-            raise FileNotFoundError('Input paths are not directories.')
+        if self._img_path is not None and isinstance(self._img_path, str) and os.path.isdir(self._img_path):
+            paths = [f for f in glob(self._img_path + '/*', recursive=True) if os.path.isfile(f)]
+        elif self._ann_path is not None and isinstance(self._ann_path, str) and os.path.isdir(self._ann_path):
+            paths = [f for f in glob(self._ann_path + '/*', recursive=True) if os.path.isfile(f)]
+        else:
+            raise FileNotFoundError('Incorrect initialization paths.')
 
         # dict for pairs (cls_id, cls_name)
         class_dict = {}
-        with open(os.path.join(self._ann_dir, self._file_cls_name), 'r') as f_cls:
+        with open(os.path.join(self._ann_path, self._file_cls_name), 'r') as f_cls:
             classes = f_cls.read().splitlines()
         for cls_id, cls_name in enumerate(classes):
             class_dict[cls_id] = cls_name
 
-        # create annotations
-        for img_name in tqdm(os.listdir(self._img_dir)):
-            img_path = os.path.join(self._img_dir, img_name)
-            ann_path = os.path.join(self._ann_dir, os.path.splitext(img_name)[0] + '.txt')
+        for p in tqdm(paths):
+            if p.split('.')[-1] != 'txt':
+                img_name = os.path.basename(p)
+                ann_path = os.path.join(self._ann_path, os.path.splitext(img_name)[0] + '.txt')
+                ann = self.get_annotation(ann_path=ann_path, img_path=p, class_dict=class_dict, labels=labels)
+            else:
+                ann = self.get_annotation(ann_path=p, img_path=None, class_dict=class_dict, labels=labels)
 
-            ann = self.get_annotation(ann_path=ann_path, img_path=img_path, class_dict=class_dict, labels=labels)
             if ann is not None and (len(ann) > 0 or is_load_empty_ann):
                 self._annotations += [ann]
 
-        self.log.info('Loaded {} {} annotations.'.format(colorstr('cyan', 'bold',len(self.annotations)),
-                                                         colorstr(self.__class__.__name__)))
+        self.log.info('Loaded {} {} annotations.'.format(len(self.annotations), self.__class__.__name__))
 
-    def get_annotation(self, ann_path: str, img_path: str, class_dict: Dict[int, str],
+    def get_annotation(self, ann_path: str, img_path: Union[str, None], class_dict: Dict[int, str],
                        labels: List[str] = None) -> Union[Annotation, None]:
         """
         Load Yolo annotation object
@@ -66,11 +72,12 @@ class Yolo(FormatBase):
             with open(ann_path, 'r') as ann_file:
                 all_annotations = ann_file.read().splitlines()
         except Exception as error:
-            self.log.info('{}. Skip annotation loading: {}'.format(colorstr(self.__class__.__name__), error))
+            self.log.info('{}. Skip annotation loading: {}'.format(self.__class__.__name__, error))
             return None
 
         if img_path is None or not os.path.exists(img_path):
-            self.log.info('{}: Skip annotation loading: Image is not exists.'.format(colorstr(self.__class__.__name__)))
+            self.log.info("{}. Skip annotation loading: Image is not exists.\n "
+                          "Couldn't evaluate shape image params.".format(self.__class__.__name__))
             return None
 
         w, h, d = Image.get_shape(img_path=img_path)
@@ -81,10 +88,10 @@ class Yolo(FormatBase):
             obj_name = class_dict[int(one_obj[0])]
             if len(labels) > 0 and obj_name not in labels:
                 continue
-            if obj_name in self._labels_stat:
-                self._labels_stat[obj_name] += 1
+            if obj_name in self._labels_stat['hbox']:
+                self._labels_stat['hbox'][obj_name] += 1
             else:
-                self._labels_stat[obj_name] = 1
+                self._labels_stat['hbox'][obj_name] = 1
 
             x_c = float(one_obj[1])
             y_c = float(one_obj[2])
@@ -116,16 +123,15 @@ class Yolo(FormatBase):
             target_dir = os.path.join(save_dir, 'annotations_yolo_' + time_now)
             os.makedirs(target_dir, exist_ok=True)
         else:
-            if self.annotation_directory is None:
+            if self.annotation_path is None:
                 raise ValueError('Save directory is None.')
-            target_dir = self.annotation_directory
+            target_dir = self.annotation_path
 
         # upload dir classes name
         classes_dir = {}
-        name_classes = list(self._labels_stat.keys())
 
-        for i in range(len(name_classes)):
-            classes_dir[name_classes[i]] = i
+        for i in range(len(self.labels)):
+            classes_dir[self.labels[i]] = i
 
         if is_save_images:
             img_save_dir = os.path.join(os.path.dirname(target_dir), 'images')
@@ -137,23 +143,24 @@ class Yolo(FormatBase):
                 w_image = ann.width
                 h_image = ann.height
 
-                for obj in ann.objects:
-                    if isinstance(obj, HBox):
-                        hbox = obj
-                    elif isinstance(obj, Polygon):
-                        hbox = HBox.from_polygon(obj)
-                    else:
-                        raise NotImplemented
+                for obj_shape in ann.objects:
+                    for _, obj in obj_shape:
+                        if isinstance(obj, HBox):
+                            hbox = obj
+                        elif isinstance(obj, Polygon):
+                            hbox = HBox.from_polygon(obj)
+                        else:
+                            continue
 
-                    label = classes_dir[hbox.label]
+                        label = classes_dir[hbox.label]
 
-                    x_c = float((hbox.box[0] + hbox.box[2])/2) / w_image
-                    y_c = float((hbox.box[1] + hbox.box[3])/2) / h_image
-                    w_b = float((hbox.box[2] - hbox.box[0]) / w_image)
-                    h_b = float((hbox.box[3] - hbox.box[1]) / h_image)
+                        x_c = float((hbox.box[0] + hbox.box[2])/2) / w_image
+                        y_c = float((hbox.box[1] + hbox.box[3])/2) / h_image
+                        w_b = float((hbox.box[2] - hbox.box[0]) / w_image)
+                        h_b = float((hbox.box[3] - hbox.box[1]) / h_image)
 
-                    box = '%d %f %f %f %f\r' % (label, x_c, y_c, w_b, h_b)
-                    f.writelines(box)
+                        box = '%d %f %f %f %f\r' % (label, x_c, y_c, w_b, h_b)
+                        f.writelines(box)
 
             if is_save_images:
                 new_path = os.path.join(img_save_dir, os.path.basename(ann.img_path))
@@ -165,14 +172,12 @@ class Yolo(FormatBase):
                 str_clas_and_id = '{}\r'.format(cls_name)
                 f.writelines(str_clas_and_id)
 
-        self.log.info("{}: Saved {} annotations.".format(colorstr(self.__class__.__name__),
-                                                         colorstr('cyan', 'bold', len(self.annotations))))
+        self.log.info("{}. Saved {} annotations.".format(self.__class__.__name__, len(self.annotations)))
 
         if is_save_images:
-            self.log.info("{}: Saved {} images.".format(colorstr(self.__class__.__name__),
-                                                        colorstr('cyan', 'bold', len(self.annotations))))
+            self.log.info("{}. Saved {} images.".format(self.__class__.__name__, len(self.annotations)))
 
-        self.log.info("Saved in {}.".format(colorstr(self.__class__.__name__)))
+        self.log.info("Saved in {}.".format(self.__class__.__name__))
 
     def save_paths_list(self, new_images_dir: str, dest_dir: str):
         """

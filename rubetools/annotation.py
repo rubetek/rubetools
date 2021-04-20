@@ -1,4 +1,8 @@
 import os
+from .shapes.hbox import HBox
+from .shapes.polygon import Polygon
+from .shapes.keypoints import Keypoints
+from .object import Object
 
 
 class Annotation:
@@ -42,11 +46,22 @@ class Annotation:
         :param obj:
         :return:
         """
-        if obj is not None:
+        if isinstance(obj, Object):
             self._objects.append(obj)
+        elif isinstance(obj, HBox):
+            new_obj = Object(hbox=obj)
+            self._objects.append(new_obj)
+        elif isinstance(obj, Polygon):
+            new_obj = Object(polygon=obj)
+            self._objects.append(new_obj)
+        elif isinstance(obj, Keypoints):
+            new_obj = Object(keypoints=obj)
+            self._objects.append(new_obj)
+        else:
+            raise ValueError("Unsupported object's type")
 
     def __len__(self):
-        return len(self._objects)
+        return len(self.objects)
 
     def __iter__(self):
         return iter(self._objects)
@@ -65,7 +80,7 @@ class Annotation:
             return False
 
         for i in range(len(self.objects)):
-            if self.objects[i] != other.objects[i]:
+            if len(self.objects[i]) != len(other.objects[i]):
                 return False
 
         return True

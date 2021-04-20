@@ -1,6 +1,7 @@
 tqdm~=4.56.0
 opencv-python~=4.5.1.48
-pillow~=8.1.0
-pandas~=1.2.1
-matplotlib~=3.3.4
+pandas==1.1.5
 xmltodict~=0.12.0
+pillow~=8.1.0
+shapely~=1.7.1
+matplotlib~=3.3.4

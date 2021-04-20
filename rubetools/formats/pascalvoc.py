@@ -11,13 +11,51 @@ from .base import FormatBase
 from ..shapes.hbox import HBox
 from ..shapes.polygon import Polygon
 from ..annotation import Annotation
-from ..utils import Image, colorstr
+from ..utils import Image
 
 
 class PascalVOC(FormatBase):
     """
-    PascalVOC annotation format
+    The PascalVOC annotation format has following structure:
+    <annotation>
+      <folder></folder>
+      <filename></filename>
+      <source>
+        <database></database>
+        <annotation></annotation>
+        <image></image>
+      </source>
+      <size>
+        <width></width>
+        <height></height>
+        <depth></depth>
+      </size>
+      <segmented></segmented>
+      <object>
+        <name></name>
+        <occluded></occluded>
+        <bndbox>
+          <xmin></xmin>
+          <ymin></ymin>
+          <xmax></xmax>
+          <ymax></ymax>
+        </bndbox>
+      </object>
+      ...
+      <object>
+        <name></name>
+        <occluded></occluded>
+        <bndbox>
+          <xmin></xmin>
+          <ymin></ymin>
+          <xmax></xmax>
+          <ymax></ymax>
+        </bndbox>
+      </object>
+    </annotation>
+
     """
+
     def _load(self, labels: List[str] = None, is_load_empty_ann: bool = True):
         """
         Load PascalVOC format annotations
@@ -25,23 +63,25 @@ class PascalVOC(FormatBase):
         :param is_load_empty_ann: if True - load annotations with empty objects images, otherwise - skip.
         :return:
         """
-        # common checks implemented in the base method
-        super()._load(labels=labels, is_load_empty_ann=is_load_empty_ann)
+        if self._img_path is not None and isinstance(self._img_path, str) and os.path.isdir(self._img_path):
+            paths = [f for f in glob(self._img_path + '/*', recursive=True) if os.path.isfile(f)]
+        elif self._ann_path is not None and isinstance(self._ann_path, str) and os.path.isdir(self._ann_path):
+            paths = [f for f in glob(self._ann_path + '/*', recursive=True) if os.path.isfile(f)]
+        else:
+            raise FileNotFoundError('Incorrect initialization paths.')
 
-        if not (os.path.isdir(self._img_dir) and os.path.isdir(self._ann_dir)):
-            raise FileNotFoundError('Input paths are not directories.')
+        for p in tqdm(paths):
+            if p.split('.')[-1] != 'xml':
+                img_name = os.path.basename(p)
+                ann_path = os.path.join(self._ann_path, os.path.splitext(img_name)[0] + '.xml')
+                ann = self.get_annotation(ann_path=ann_path, img_path=p, labels=labels)
+            else:
+                ann = self.get_annotation(ann_path=p, img_path=None, labels=labels)
 
-        img_paths = [f for f in glob(self._img_dir + '/*', recursive=True) if os.path.isfile(f)]
-        for img_path in tqdm(img_paths):
-            img_name = os.path.basename(img_path)
-            ann_path = os.path.join(self._ann_dir, os.path.splitext(img_name)[0] + '.xml')
-
-            ann = self.get_annotation(ann_path=ann_path, img_path=img_path, labels=labels)
             if ann is not None and (len(ann) > 0 or is_load_empty_ann):
                 self._annotations += [ann]
 
-        self.log.info('Loaded {} {} annotations.'.format(colorstr('cyan', 'bold', len(self.annotations)),
-                                                         colorstr(self.__class__.__name__)))
+        self.log.info('Loaded {} {} annotations.'.format(len(self.annotations), self.__class__.__name__))
 
     def get_annotation(self, ann_path: str, img_path: str = None, labels: List[str] = None) -> Union[Annotation, None]:
         """
@@ -55,7 +95,7 @@ class PascalVOC(FormatBase):
             with open(ann_path, 'rb') as f:
                 ann_xml = xmltodict.parse(f)
         except Exception as error:
-            self.log.info('{}: Skip annotation loading: {}'.format(colorstr(self.__class__.__name__), error))
+            self.log.info('{}. Skip annotation loading: {}'.format(self.__class__.__name__, error))
             return None
 
         try:
@@ -73,17 +113,20 @@ class PascalVOC(FormatBase):
 
             ann = Annotation(img_path=img_path, width=width, height=height, depth=depth)
             if 'object' in ann_xml:
-                # if only one object in annotation
-                boxes = ann_xml['object'] if 'name' not in ann_xml['object'] else [ann_xml['object']]
-                for obj in boxes:
+                # if one object in xml
+                if 'name' in ann_xml['object']:
+                    objects = [ann_xml['object']]
+                else:
+                    objects = ann_xml['object']
+                for obj in objects:
                     try:
                         obj_name = obj['name']
                         if labels is not None and len(labels) > 0 and obj_name not in labels:
                             continue
-                        if obj_name in self._labels_stat:
-                            self._labels_stat[obj_name] += 1
+                        if obj_name in self._labels_stat['hbox']:
+                            self._labels_stat['hbox'][obj_name] += 1
                         else:
-                            self._labels_stat[obj_name] = 1
+                            self._labels_stat['hbox'][obj_name] = 1
 
                         x_min = int(round(float(obj['bndbox']['xmin'])))
                         y_min = int(round(float(obj['bndbox']['ymin'])))
@@ -93,10 +136,10 @@ class PascalVOC(FormatBase):
                         box = HBox(label=obj_name, x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
                         ann.add(box)
                     except KeyError:
-                        self.log.info("{}: One of annotation param is not set.".format(colorstr(self.__class__.__name__)))
+                        self.log.info("{}. One of annotation param is not set.".format(self.__class__.__name__))
             return ann
         except KeyError as error:
-            self.log.info('{}: Skip annotation loading: {}'.format(colorstr(self.__class__.__name__), error))
+            self.log.info('{}. Skip annotation loading: {}'.format(self.__class__.__name__, error))
             return None
 
     def save(self, save_dir: str = None, is_save_images: bool = False, **kwargs):
@@ -114,9 +157,9 @@ class PascalVOC(FormatBase):
             target_dir = os.path.join(save_dir, 'annotations_pascal_' + time_now)
             os.makedirs(target_dir, exist_ok=True)
         else:
-            if self.annotation_directory is None:
+            if self.annotation_path is None:
                 raise ValueError('Save directory is None.')
-            target_dir = self.annotation_directory
+            target_dir = self.annotation_path
 
         if is_save_images:
             img_save_dir = os.path.join(os.path.dirname(target_dir), 'images')
@@ -143,33 +186,34 @@ class PascalVOC(FormatBase):
             height.text = str(ann.height)
             depth.text = str(ann.depth)
 
-            for obj in ann.objects:
-                if isinstance(obj, HBox):
-                    hbox = obj
-                elif isinstance(obj, Polygon):
-                    hbox = HBox.from_polygon(obj)
-                else:
-                    raise NotImplemented
+            for obj_shape in ann.objects:
+                for _, obj in obj_shape:
+                    if isinstance(obj, HBox):
+                        hbox = obj
+                    elif isinstance(obj, Polygon):
+                        hbox = HBox.from_polygon(obj)
+                    else:
+                        continue
 
-                box = ET.SubElement(root, 'object')
+                    box = ET.SubElement(root, 'object')
 
-                name = ET.SubElement(box, 'name')
-                name.text = hbox.label
+                    name = ET.SubElement(box, 'name')
+                    name.text = hbox.label
 
-                bndbox = ET.SubElement(box, 'bndbox')
-                xmin = hbox.box[0]
-                ymin = hbox.box[1]
-                xmax = hbox.box[2]
-                ymax = hbox.box[3]
+                    bndbox = ET.SubElement(box, 'bndbox')
+                    xmin = hbox.box[0]
+                    ymin = hbox.box[1]
+                    xmax = hbox.box[2]
+                    ymax = hbox.box[3]
 
-                bndbox_xmin = ET.SubElement(bndbox, 'xmin')
-                bndbox_xmin.text = str(xmin)
-                bndbox_ymin = ET.SubElement(bndbox, 'ymin')
-                bndbox_ymin.text = str(ymin)
-                bndbox_xmax = ET.SubElement(bndbox, 'xmax')
-                bndbox_xmax.text = str(xmax)
-                bndbox_ymax = ET.SubElement(bndbox, 'ymax')
-                bndbox_ymax.text = str(ymax)
+                    bndbox_xmin = ET.SubElement(bndbox, 'xmin')
+                    bndbox_xmin.text = str(xmin)
+                    bndbox_ymin = ET.SubElement(bndbox, 'ymin')
+                    bndbox_ymin.text = str(ymin)
+                    bndbox_xmax = ET.SubElement(bndbox, 'xmax')
+                    bndbox_xmax.text = str(xmax)
+                    bndbox_ymax = ET.SubElement(bndbox, 'ymax')
+                    bndbox_ymax.text = str(ymax)
 
             tree = ET.ElementTree(root)
             xml_path = os.path.join(target_dir, os.path.splitext(os.path.basename(ann.img_path))[0] + '.xml')
@@ -180,11 +224,9 @@ class PascalVOC(FormatBase):
                 shutil.copy(ann.img_path, new_path)
                 saved_img_counter += 1
 
-        self.log.info("{}: Saved {} annotations.".format(colorstr(self.__class__.__name__),
-                                                         colorstr('cyan', 'bold', len(self.annotations))))
+        self.log.info("{}. Saved {} annotations.".format(self.__class__.__name__, len(self.annotations)))
 
         if is_save_images:
-            self.log.info("{}: Saved {} images.".format(colorstr(self.__class__.__name__),
-                                                        colorstr('cyan', 'bold', saved_img_counter)))
+            self.log.info("{}. Saved {} images.".format(self.__class__.__name__, saved_img_counter))
 
-        self.log.info("Saved in {}.".format(colorstr(self.__class__.__name__)))
+        self.log.info("Saved in {}.".format(self.__class__.__name__))

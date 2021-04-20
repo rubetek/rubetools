@@ -18,6 +18,6 @@ __title__ = "rubetools"
 __version__ = generate_version(VERSION, prerelease=PRERELEASE, revision=REVISION)
 __author__ = "RubetekAI"
 __description__ = "Rubetek dataset tools."
-__url__ = "http://gitlab.rubetek.com/ai/rubetek_dataset_tools/"
+__url__ = "https://github.com/rubetek/rubetools"
 __license__ = "Apache License 2.0"
 __keywords__ = "rubetools rubetek datatools ai"

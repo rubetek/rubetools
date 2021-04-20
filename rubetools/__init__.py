@@ -1,13 +1,14 @@
 import logging
 import os
 
+# init logging
 logger = logging.getLogger(os.path.basename(os.path.dirname(__file__)))
 logger.setLevel(logging.INFO)
 
 # stream logging
 stream_handler = logging.StreamHandler()
 stream_handler.setLevel(logging.INFO)
-stream_formatter = logging.Formatter(fmt='%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+stream_formatter = logging.Formatter('%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 stream_handler.setFormatter(stream_formatter)
 logger.addHandler(stream_handler)
 

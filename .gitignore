@@ -2,15 +2,11 @@ __pycache__/
 .idea
 .vscode/
 .ipynb_checkpoints/
-
 .venv
-dist
-output
-tests/data
 
-utils/converters
-utils/other
+dist
 rubetools.egg-info
 
+output
+tests/data
 main.py
-

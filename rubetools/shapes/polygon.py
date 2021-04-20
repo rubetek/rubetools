@@ -1,39 +1,29 @@
 import numpy as np
 import logging
 from typing import List, Tuple
+from .shape import Shape
 
 Point = Tuple[float, float]
 
 logger = logging.getLogger(__name__)
 
 
-class Polygon:
+class Polygon(Shape):
     """
     Polygon shape of annotation object
     """
 
-    def __init__(self, label: str, points: List[Point]):
+    def __init__(self, label: str, points: List[Point], conf: float = 1):
         """
         Constructor
         :param label: object's class name
         :param points: List of object border pairs (x,y)
         """
-        self._label = label
+        super(Polygon, self).__init__(label=label, confidence=conf)
         self._points = points
 
     def __repr__(self):
         return "<{}, class: {}>".format(self.__class__.__name__, self.label)
-
-    @property
-    def label(self):
-        return self._label
-
-    @label.setter
-    def label(self, value):
-        if isinstance(value, str):
-            self._label = value
-        else:
-            raise ValueError("Expected str value.")
 
     @property
     def points(self):
@@ -52,7 +42,14 @@ class Polygon:
         points = [(box.box[0], box.box[1]), (box.box[2], box.box[1]),
                   (box.box[2], box.box[3]), (box.box[0], box.box[3])]
 
-        return cls(label=box.label, points=points)
+        conf = box.confidence
+
+        return cls(label=box.label, points=points, conf=conf)
+
+    def from_keypoints(self, keypoints):
+        if not isinstance(keypoints, Keypoints):
+            raise ValueError('Incorrect input type.')
+        raise NotImplemented
 
     @property
     def area(self):
@@ -73,3 +70,4 @@ class Polygon:
         return True
 
 from .hbox import HBox
+from .keypoints import Keypoints

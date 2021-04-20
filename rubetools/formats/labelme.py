@@ -1,21 +1,23 @@
 import os
 import datetime
 import shutil
+from glob import glob
 from tqdm import tqdm
 import xmltodict
 import xml.etree.ElementTree as ET
-from typing import List
+from typing import List, Union
 from .base import FormatBase
 from ..shapes.polygon import Polygon
 from ..shapes.hbox import HBox
 from ..annotation import Annotation
-from ..utils import Image, colorstr
+from ..utils import Image
 
 
 class LabelMe(FormatBase):
     """
     LabelMe annotation format
     """
+
     def _load(self, labels: List[str] = None, is_load_empty_ann: bool = True):
         """
         Load LabelMe format annotations
@@ -23,39 +25,79 @@ class LabelMe(FormatBase):
         :param is_load_empty_ann: if True - load annotations with empty objects images, otherwise - skip.
         :return:
         """
-        super()._load(labels=labels, is_load_empty_ann=is_load_empty_ann)
+        if self._img_path is not None and isinstance(self._img_path, str) and os.path.isdir(self._img_path):
+            paths = [f for f in glob(self._img_path + '/*', recursive=True) if os.path.isfile(f)]
+        elif self._ann_path is not None and isinstance(self._ann_path, str) and os.path.isdir(self._ann_path):
+            paths = [f for f in glob(self._ann_path + '/*', recursive=True) if os.path.isfile(f)]
+        else:
+            raise FileNotFoundError('Incorrect initialization paths.')
 
-        for img_name in tqdm(os.listdir(self._img_dir)):
-            image_path = os.path.join(self._img_dir, img_name)
-            ann_path = os.path.join(self._ann_dir, os.path.splitext(img_name)[0] + '.xml')
-            width, height, depth = Image.get_shape(img_path=image_path)
-            cur_ann = Annotation(img_path=image_path, width=width, height=height, depth=depth)
+        for p in tqdm(paths):
+            if p.split('.')[-1] != 'xml':
+                img_name = os.path.basename(p)
+                ann_path = os.path.join(self._ann_path, os.path.splitext(img_name)[0] + '.xml')
+                ann = self.get_annotation(ann_path=ann_path, img_path=p, labels=labels)
+            else:
+                ann = self.get_annotation(ann_path=p, img_path=None, labels=labels)
 
-            try:
-                xml = xmltodict.parse(open(ann_path, 'rb'))
-                # if now objects
-                if 'object' in xml['annotation']:
-                    # if one object in xml
-                    if 'name' in xml['annotation']['object']:
-                        objects = [xml['annotation']['object']]
+            if ann is not None and (len(ann) > 0 or is_load_empty_ann):
+                self._annotations += [ann]
+
+        self.log.info('Loaded {} {} annotations.'.format(len(self.annotations), self.__class__.__name__))
+
+    def get_annotation(self, ann_path: str, img_path: str = None, labels: List[str] = None) -> Union[Annotation, None]:
+        """
+        Load LabelMe annotation object
+        :param ann_path: annotation path
+        :param img_path: image path
+        :param labels: list of class labels. If None, load all seen labels
+        :return:
+        """
+        try:
+            with open(ann_path, 'rb') as f:
+                ann_xml = xmltodict.parse(f)
+        except Exception as error:
+            self.log.info('{}. Skip annotation loading: {}'.format(self.__class__.__name__, error))
+            return None
+
+        try:
+            ann_xml = ann_xml['annotation']
+            if img_path is not None and os.path.exists(img_path):
+                width, height, depth = Image.get_shape(img_path)
+            else:
+                if 'folder' in ann_xml and ann_xml['folder'] is not None:
+                    img_path = os.path.join(ann_xml['folder'], ann_xml['filename'])
+                else:
+                    img_path = ann_xml['filename']
+                width = int(ann_xml['imagesize']['ncols'])
+                height = int(ann_xml['imagesize']['nrows'])
+                depth = 3
+
+            ann = Annotation(img_path=img_path, width=width, height=height, depth=depth)
+            if 'object' in ann_xml:
+                # if one object in xml
+                if 'name' in ann_xml['object']:
+                    objects = [ann_xml['object']]
+                else:
+                    objects = ann_xml['object']
+                for obj in objects:
+                    if labels is not None and len(labels) > 0 and obj['name'] not in labels:
+                        continue
+                    if obj['name'] in self._labels_stat['polygon']:
+                        self._labels_stat['polygon'][obj['name']] += 1
                     else:
-                        objects = xml['annotation']['object']
-                    for obj in objects:
-                        points = []
-                        for p in obj['polygon']['pt']:
-                            points.append((float(p['x']), float(p['y'])))
+                        self._labels_stat['polygon'][obj['name']] = 1
 
-                        polygon = Polygon(label=obj['name'], points=points)
-                        cur_ann.add(polygon)
+                    points = []
+                    for p in obj['polygon']['pt']:
+                        points.append((float(p['x']), float(p['y'])))
 
-                if cur_ann is not None and (len(cur_ann) > 0 or is_load_empty_ann):
-                    self._annotations += [cur_ann]
-            except Exception as error:
-                self.log.info('{}: Skip annotation saving: {}'.format(colorstr(self.__class__.__name__), error))
-                continue
-
-        self.log.info('Loaded {} {} annotations.'.format(colorstr('cyan', 'bold', len(self.annotations)),
-                                                         colorstr(self.__class__.__name__)))
+                    polygon = Polygon(label=obj['name'], points=points)
+                    ann.add(polygon)
+            return ann
+        except Exception as error:
+            self.log.info('{}. Skip annotation loading: {}'.format(self.__class__.__name__, error))
+            return None
 
     def save(self, save_dir: str = None, is_save_images: bool = False, **kwargs):
         """
@@ -72,9 +114,9 @@ class LabelMe(FormatBase):
             target_dir = os.path.join(save_dir, 'annotations_labelme_' + time_now)
             os.makedirs(target_dir, exist_ok=True)
         else:
-            if self.annotation_directory is None:
+            if self.annotation_path is None:
                 raise ValueError('Save directory is None.')
-            target_dir = self.annotation_directory
+            target_dir = self.annotation_path
 
         if is_save_images:
             img_save_dir = os.path.join(os.path.dirname(target_dir), 'images')
@@ -98,43 +140,46 @@ class LabelMe(FormatBase):
             width = ET.SubElement(size, 'ncols')
             width.text = str(ann.width)
 
-            for idx, obj in enumerate(ann.objects):
-                if isinstance(obj, HBox):
-                    polygon = Polygon.from_box(obj)
-                elif isinstance(obj, Polygon):
-                    polygon = obj
-                else:
-                    raise NotImplemented
+            obj_counter = 0
+            for obj_shape in ann.objects:
+                for _, obj in obj_shape:
+                    if isinstance(obj, HBox):
+                        polygon = Polygon.from_box(obj)
+                    elif isinstance(obj, Polygon):
+                        polygon = obj
+                    else:
+                        continue
 
-                box = ET.SubElement(root, 'object')
+                    box = ET.SubElement(root, 'object')
 
-                name = ET.SubElement(box, 'name')
-                name.text = polygon.label
+                    name = ET.SubElement(box, 'name')
+                    name.text = polygon.label
 
-                deleted = ET.SubElement(box, 'deleted')
-                deleted.text = '0'
-                verified = ET.SubElement(box, 'verified')
-                verified.text = '0'
-                occluded = ET.SubElement(box, 'occluded')
-                occluded.text = 'no'
-                date = ET.SubElement(box, 'date')
-                date.text = str(datetime.datetime.now())
-                obj_id = ET.SubElement(box, 'id')
-                obj_id.text = str(idx)
+                    deleted = ET.SubElement(box, 'deleted')
+                    deleted.text = '0'
+                    verified = ET.SubElement(box, 'verified')
+                    verified.text = '0'
+                    occluded = ET.SubElement(box, 'occluded')
+                    occluded.text = 'no'
+                    date = ET.SubElement(box, 'date')
+                    date.text = str(datetime.datetime.now())
+                    obj_id = ET.SubElement(box, 'id')
+                    obj_id.text = str(obj_counter)
 
-                parts = ET.SubElement(box, 'parts')
-                ET.SubElement(parts, 'hasparts')
-                ET.SubElement(parts, 'ispartof')
+                    parts = ET.SubElement(box, 'parts')
+                    ET.SubElement(parts, 'hasparts')
+                    ET.SubElement(parts, 'ispartof')
 
-                obj_polygon = ET.SubElement(box, 'polygon')
-                for p in polygon.points:
-                    pt = ET.SubElement(obj_polygon, 'pt')
-                    pt_x = ET.SubElement(pt, 'x')
-                    pt_x.text = str(p[0])
-                    pt_y = ET.SubElement(pt, 'y')
-                    pt_y.text = str(p[1])
+                    obj_polygon = ET.SubElement(box, 'polygon')
+                    for p in polygon.points:
+                        pt = ET.SubElement(obj_polygon, 'pt')
+                        pt_x = ET.SubElement(pt, 'x')
+                        pt_x.text = str(p[0])
+                        pt_y = ET.SubElement(pt, 'y')
+                        pt_y.text = str(p[1])
 
-                ET.SubElement(box, 'attributes')
+                    ET.SubElement(box, 'attributes')
+                    obj_counter += 1
 
             tree = ET.ElementTree(root)
             xml_path = os.path.join(target_dir, os.path.splitext(os.path.basename(ann.img_path))[0] + '.xml')
@@ -145,11 +190,9 @@ class LabelMe(FormatBase):
                 shutil.copy(ann.img_path, new_path)
                 saved_img_counter += 1
 
-        self.log.info("{}: Saved {} annotations.".format(colorstr(self.__class__.__name__),
-                                                         colorstr('cyan', 'bold', len(self.annotations))))
+        self.log.info("{}. Saved {} annotations.".format(self.__class__.__name__, len(self.annotations)))
 
         if is_save_images:
-            self.log.info("{}: Saved {} images.".format(colorstr(self.__class__.__name__),
-                                                        colorstr('cyan', 'bold', saved_img_counter)))
+            self.log.info("{}. Saved {} images.".format(self.__class__.__name__, saved_img_counter))
 
-        self.log.info("Saved in {}.".format(colorstr(self.__class__.__name__)))
+        self.log.info("Saved in {}.".format(self.__class__.__name__))

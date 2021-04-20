@@ -1,1 +1,15 @@
-<annotation><folder>images</folder><filename>DJI-00760-00033.jpg</filename><path>data/images/DJI-00760-00033.jpg</path><size><width>3321</width><height>2481</height><depth>3</depth></size></annotation>
+<annotation>
+  <folder></folder>
+  <filename>Downloaded/open/aerial-cars-dataset/images/DJI-00760-00033.jpg</filename>
+  <source>
+    <database>Unknown</database>
+    <annotation>Unknown</annotation>
+    <image>Unknown</image>
+  </source>
+  <size>
+    <width>3321</width>
+    <height>2481</height>
+    <depth></depth>
+  </size>
+  <segmented>0</segmented>
+</annotation>
