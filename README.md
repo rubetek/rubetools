@@ -43,7 +43,7 @@ We continue developing support for new annotation formats.
 
 ### Prerequisites
 
-The project supports Python 3.6, 3,7, 3,8. We do not take any responsibility for any other version compatibility.
+The project supports Python 3.6, 3.7, 3.8. We do not take any responsibility for any other version compatibility.
 
 ```pip install rubetools```
 
