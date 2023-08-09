@@ -31,13 +31,7 @@ class VIA(FormatBase):
         else:
             raise FileNotFoundError('Incorrect annotation path.')
 
-        """
-         Previous VGG Image Annotator JSON format used the metadata key. 
-         # images_metadata = dataset["_via_img_metadata"]
-         Now it's updated to the image name
-        """
-        images_metadata = dataset
-
+        images_metadata = dataset["_via_img_metadata"]
         for _, img_data in tqdm(images_metadata.items()):
             img_name = img_data["filename"]
             img_path = os.path.join(self._img_path, img_name)
